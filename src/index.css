@@ -1,0 +1,43 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', sans-serif;
+}
+
+/* Pulse animation for notifications */
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(124, 58, 237, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0);
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+}
+
+/* Phone call animation */
+@keyframes phone-ring {
+  0%, 100% {
+    transform: scale(1);
+  }
+  5%, 15% {
+    transform: scale(1.05);
+  }
+  10%, 20% {
+    transform: scale(0.95);
+  }
+}
+
+.animate-phone-ring {
+  animation: phone-ring 2s ease-in-out infinite;
+}
