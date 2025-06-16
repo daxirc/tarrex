@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Clock, DollarSign, AlertTriangle } from 'lucide-react';
+import { Clock, DollarSign, AlertTriangle, Play } from 'lucide-react';
 import { useSocket } from '../../contexts/SocketContext';
+import Button from '../ui/Button';
 
 interface BillingTimerProps {
   sessionId: string;
@@ -8,6 +9,8 @@ interface BillingTimerProps {
   ratePerMinute: number;
   onInsufficientFunds?: () => void;
   userRole: 'client' | 'advisor';
+  showStartChargingButton?: boolean;
+  onBillingStartRequest?: () => void;
 }
 
 export default function BillingTimer({
@@ -15,7 +18,9 @@ export default function BillingTimer({
   isActive,
   ratePerMinute,
   onInsufficientFunds,
-  userRole
+  userRole,
+  showStartChargingButton = false,
+  onBillingStartRequest
 }: BillingTimerProps) {
   const { socket } = useSocket();
   const [duration, setDuration] = useState(0); // in seconds
@@ -23,6 +28,7 @@ export default function BillingTimer({
   const [currentBalance, setCurrentBalance] = useState<number | null>(null);
   const [lowBalanceWarning, setLowBalanceWarning] = useState(false);
   const [lastBillingUpdate, setLastBillingUpdate] = useState<Date | null>(null);
+  const [isRequestingBillingStart, setIsRequestingBillingStart] = useState(false);
 
   // Format duration as MM:SS
   const formatDuration = (seconds: number): string => {
@@ -79,12 +85,19 @@ export default function BillingTimer({
       }
     };
 
+    const handleBillingStarted = (data: { sessionId: string }) => {
+      if (data.sessionId !== sessionId) return;
+      setIsRequestingBillingStart(false);
+    };
+
     socket.on('billing_update', handleBillingUpdate);
     socket.on('insufficient_funds', handleInsufficientFunds);
+    socket.on('billing_started', handleBillingStarted);
 
     return () => {
       socket.off('billing_update', handleBillingUpdate);
       socket.off('insufficient_funds', handleInsufficientFunds);
+      socket.off('billing_started', handleBillingStarted);
     };
   }, [socket, sessionId, isActive, ratePerMinute, onInsufficientFunds]);
 
@@ -98,6 +111,13 @@ export default function BillingTimer({
 
     return () => clearInterval(timer);
   }, [isActive]);
+
+  const handleRequestBillingStart = () => {
+    if (onBillingStartRequest) {
+      setIsRequestingBillingStart(true);
+      onBillingStartRequest();
+    }
+  };
 
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
@@ -136,6 +156,20 @@ export default function BillingTimer({
           </>
         )}
       </div>
+      
+      {/* Start Charging Button for Advisors */}
+      {userRole === 'advisor' && showStartChargingButton && !isActive && (
+        <div className="mt-3">
+          <Button 
+            onClick={handleRequestBillingStart}
+            disabled={isRequestingBillingStart}
+            className="w-full"
+          >
+            <Play className="w-4 h-4 mr-2" />
+            {isRequestingBillingStart ? 'Requesting...' : 'Start Charging'}
+          </Button>
+        </div>
+      )}
       
       {lowBalanceWarning && userRole === 'client' && (
         <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded-md flex items-start">

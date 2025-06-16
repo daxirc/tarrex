@@ -47,6 +47,14 @@ export default function ChatInterface({
   const [advisorRate, setAdvisorRate] = useState<number>(1.99);
   const [billingActive, setBillingActive] = useState<boolean>(false);
   const [insufficientFunds, setInsufficientFunds] = useState<boolean>(false);
+  const [showAdvisorStartChargingButton, setShowAdvisorStartChargingButton] = useState<boolean>(false);
+  const [showClientBillingConfirmation, setShowClientBillingConfirmation] = useState<boolean>(false);
+  const [pendingBillingSessionDetails, setPendingBillingSessionDetails] = useState<{
+    sessionId: string;
+    advisorId: string;
+    advisorName: string;
+    ratePerMinute: number;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
@@ -127,10 +135,11 @@ export default function ChatInterface({
             // Don't add a message here - we'll let the socket event handler do that
           }
         } else if (session?.status === 'in_progress' && session?.start_time) {
-          // If session is in progress and has a start time, activate billing
+          // If session is in progress and has a start time, activate billing for both client and advisor
+          setBillingActive(true);
+          
+          // Only the advisor should emit billing_start event
           if (user?.role === 'advisor') {
-            setBillingActive(true);
-            
             // Emit billing_start event to start server-side billing
             if (socket && isConnected) {
               socket.emit('billing_start', {
@@ -386,10 +395,8 @@ export default function ChatInterface({
           toast.success('Chat request accepted');
           setIsChatActive(true);
           
-          // If user is advisor, start billing
-          if (user?.role === 'advisor') {
-            setBillingActive(true);
-          }
+          // Set billing active for both client and advisor
+          setBillingActive(true);
           
           const acceptMessage: ChatMessage = {
             sessionId,
@@ -441,9 +448,63 @@ export default function ChatInterface({
           timestamp: Date.now(),
           type: 'system'
         };
+        
         setMessages(prev => [...prev, rejectMessage]);
         
         setAutoRedirectTimer(3);
+      }
+    };
+
+    // Handle request billing start (for client)
+    const handleRequestBillingStart = (data: { 
+      sessionId: string; 
+      advisorId: string;
+      advisorName: string;
+      ratePerMinute: number;
+    }) => {
+      if (data.sessionId !== sessionId) return;
+      
+      console.log('💰 Received billing start request:', data);
+      
+      // Only show confirmation to client
+      if (user?.role === 'client') {
+        setPendingBillingSessionDetails(data);
+        setShowClientBillingConfirmation(true);
+      }
+    };
+
+    // Handle billing started
+    const handleBillingStarted = (data: { sessionId: string }) => {
+      if (data.sessionId !== sessionId) return;
+      
+      console.log('💰 Billing has started for session:', sessionId);
+      setBillingActive(true);
+      setShowAdvisorStartChargingButton(false);
+      setShowClientBillingConfirmation(false);
+      
+      const billingMessage: ChatMessage = {
+        sessionId,
+        senderId: 'system',
+        receiverId: 'all',
+        content: 'Billing has started for this session.',
+        timestamp: Date.now(),
+        type: 'system'
+      };
+      
+      setMessages(prev => [...prev, billingMessage]);
+      
+      toast.success('Session billing has started');
+    };
+
+    // Handle billing declined
+    const handleBillingDeclined = (data: { sessionId: string }) => {
+      if (data.sessionId !== sessionId) return;
+      
+      console.log('💰 Billing request was declined for session:', sessionId);
+      setShowAdvisorStartChargingButton(true);
+      
+      if (user?.role === 'advisor') {
+        toast.error('Client declined to start billing');
       }
     };
 
@@ -478,6 +539,9 @@ export default function ChatInterface({
     socket.on('reconnect', handleReconnect);
     socket.on('billing_update', handleBillingUpdate);
     socket.on('insufficient_funds', handleInsufficientFunds);
+    socket.on('request_billing_start', handleRequestBillingStart);
+    socket.on('billing_started', handleBillingStarted);
+    socket.on('billing_declined', handleBillingDeclined);
 
     return () => {
       console.log('🧹 Cleaning up chat interface listeners');
@@ -491,6 +555,9 @@ export default function ChatInterface({
       socket.off('reconnect', handleReconnect);
       socket.off('billing_update', handleBillingUpdate);
       socket.off('insufficient_funds', handleInsufficientFunds);
+      socket.off('request_billing_start', handleRequestBillingStart);
+      socket.off('billing_started', handleBillingStarted);
+      socket.off('billing_declined', handleBillingDeclined);
     };
   }, [socket, sessionId, onClose, user?.full_name, user?.role, advisorRate, isChatActive, sessionEndedBy]);
 
@@ -657,6 +724,53 @@ export default function ChatInterface({
     setAutoRedirectTimer(10);
   };
 
+  const handleAdvisorRequestBillingStart = () => {
+    if (!socket || !isConnected) return;
+    
+    console.log('💰 Advisor requesting to start billing for session:', sessionId);
+    
+    socket.emit('request_billing_start', {
+      sessionId,
+      advisorId: userId,
+      advisorName: user?.full_name || 'Advisor',
+      ratePerMinute: advisorRate
+    });
+    
+    toast.success('Billing request sent to client');
+  };
+
+  const handleClientConfirmBilling = () => {
+    if (!socket || !isConnected || !pendingBillingSessionDetails) return;
+    
+    console.log('💰 Client confirming billing start for session:', sessionId);
+    
+    socket.emit('confirm_billing_start', {
+      sessionId,
+      clientId: userId,
+      advisorId: pendingBillingSessionDetails.advisorId
+    });
+    
+    setShowClientBillingConfirmation(false);
+    setPendingBillingSessionDetails(null);
+  };
+
+  const handleClientDeclineBilling = () => {
+    if (!socket || !isConnected || !pendingBillingSessionDetails) return;
+    
+    console.log('💰 Client declining billing start for session:', sessionId);
+    
+    socket.emit('billing_declined', {
+      sessionId,
+      clientId: userId,
+      advisorId: pendingBillingSessionDetails.advisorId
+    });
+    
+    setShowClientBillingConfirmation(false);
+    setPendingBillingSessionDetails(null);
+    
+    toast.info('You declined to start billing for this session');
+  };
+
   const getConnectionStatusText = () => {
     switch (connectionStatus) {
       case 'connected':
@@ -693,7 +807,9 @@ export default function ChatInterface({
     isChatActive,
     billingActive,
     sessionEndedBy,
-    autoRedirectTimer
+    autoRedirectTimer,
+    showAdvisorStartChargingButton,
+    showClientBillingConfirmation
   });
 
   return (
@@ -780,6 +896,39 @@ export default function ChatInterface({
         </div>
       )}
 
+      {/* Client Billing Confirmation Modal */}
+      {showClientBillingConfirmation && pendingBillingSessionDetails && (
+        <div className="bg-yellow-50 border-b border-yellow-200 p-4">
+          <div className="flex items-start">
+            <div className="flex-1">
+              <h4 className="font-medium text-yellow-800">Billing Confirmation</h4>
+              <p className="text-sm text-yellow-700 mt-1">
+                {pendingBillingSessionDetails.advisorName} would like to start billing for this session at a rate of ${pendingBillingSessionDetails.ratePerMinute.toFixed(2)}/minute.
+              </p>
+              <p className="text-sm text-yellow-700 mt-1">
+                Your wallet will be charged every minute. You can end the session at any time.
+              </p>
+            </div>
+            <div className="flex space-x-2 ml-4">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleClientDeclineBilling}
+                className="border-red-300 text-red-600 hover:bg-red-50"
+              >
+                Decline
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleClientConfirmBilling}
+              >
+                Confirm
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main content area with chat and billing */}
       <div className="flex-1 flex overflow-hidden">
         {/* Messages */}
@@ -835,8 +984,8 @@ export default function ChatInterface({
           <div ref={messagesEndRef} />
         </div>
         
-        {/* Billing sidebar - only show when chat is active */}
-        {billingActive && (
+        {/* Billing sidebar - show when chat is active or when billing is active */}
+        {(isChatActive || billingActive) && (
           <div className="w-64 border-l border-slate-200 p-4 bg-slate-50 overflow-y-auto">
             <BillingTimer 
               sessionId={sessionId}
@@ -844,6 +993,8 @@ export default function ChatInterface({
               ratePerMinute={advisorRate}
               onInsufficientFunds={handleInsufficientFunds}
               userRole={user?.role as 'client' | 'advisor'}
+              showStartChargingButton={user?.role === 'advisor' && showAdvisorStartChargingButton}
+              onBillingStartRequest={handleAdvisorRequestBillingStart}
             />
           </div>
         )}

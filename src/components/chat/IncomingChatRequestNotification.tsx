@@ -325,12 +325,14 @@ export default function IncomingChatRequestNotification() {
           socket.emit('chat_response', { sessionId, accepted: true });
           socket.emit('advisor_accepted_chat', { sessionId, advisorId: user.id });
           
-          // Start billing
-          socket.emit('billing_start', {
-            sessionId,
-            advisorId: user.id,
-            clientId: session.client_id // Now we have the client ID from the session
-          });
+          // Don't start billing automatically anymore - we'll use the controlled workflow
+          // socket.emit('billing_start', {
+          //   sessionId,
+          //   advisorId: user.id,
+          //   clientId: session.client_id
+          // });
+          
+          // Instead, set showAdvisorStartChargingButton to true in the chat interface
         } else {
           console.warn('⚠️ Socket not connected, cannot send acceptance');
         }

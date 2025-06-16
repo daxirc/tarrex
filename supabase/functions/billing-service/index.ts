@@ -334,6 +334,55 @@ io.on("connection", (socket) => {
     socket.to(sessionId).emit('session_ended', data);
   });
   
+  // New events for controlled billing workflow
+  socket.on("request_billing_start", (data) => {
+    const { sessionId, advisorId, advisorName, ratePerMinute } = data;
+    console.log(`Received request_billing_start for session ${sessionId} from advisor ${advisorId}`);
+    
+    // Forward the request to the client
+    socket.to(sessionId).emit('request_billing_start', {
+      sessionId,
+      advisorId,
+      advisorName,
+      ratePerMinute
+    });
+  });
+  
+  socket.on("confirm_billing_start", async (data) => {
+    const { sessionId, clientId, advisorId } = data;
+    console.log(`Received confirm_billing_start for session ${sessionId} from client ${clientId}`);
+    
+    // Start the billing session
+    const session = await startBillingSession(sessionId, advisorId, clientId);
+    
+    if (session) {
+      // Notify both participants that billing has started
+      io.to(sessionId).emit('billing_started', {
+        sessionId,
+        startTime: session.startTime
+      });
+      
+      // Emit initial billing status
+      io.to(sessionId).emit('billing_update', {
+        sessionId,
+        duration: session.currentDuration,
+        amountBilled: session.totalBilled,
+        currentBalance: 0 // Will be updated in first billing cycle
+      });
+    }
+  });
+  
+  socket.on("billing_declined", (data) => {
+    const { sessionId, clientId, advisorId } = data;
+    console.log(`Received billing_declined for session ${sessionId} from client ${clientId}`);
+    
+    // Notify the advisor that billing was declined
+    socket.to(sessionId).emit('billing_declined', {
+      sessionId,
+      clientId
+    });
+  });
+  
   // Handle disconnection
   socket.on("disconnect", () => {
     console.log(`Socket disconnected: ${socket.id}`);
