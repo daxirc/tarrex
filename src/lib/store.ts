@@ -37,6 +37,7 @@ export const useStore = create<UserState>((set) => ({
         // Check if error is related to refresh token
         if (sessionError.message?.includes('refresh_token_not_found') || 
             sessionError.message?.includes('Invalid Refresh Token')) {
+          console.log('Invalid refresh token detected, signing out and clearing storage');
           await supabase.auth.signOut();
           clearSupabaseData();
           window.location.href = '/login'; // Hard redirect to login
@@ -74,6 +75,7 @@ export const useStore = create<UserState>((set) => ({
       if (error instanceof Error && 
           (error.message?.includes('refresh_token_not_found') || 
            error.message?.includes('Invalid Refresh Token'))) {
+        console.log('Invalid refresh token detected in catch block, signing out and clearing storage');
         await supabase.auth.signOut();
         clearSupabaseData();
         window.location.href = '/login'; // Hard redirect to login

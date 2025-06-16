@@ -36,6 +36,14 @@ export async function trackLoginSession(userId: string) {
   }
 }
 
+// Helper function to clear Supabase data from localStorage
+export function clearSupabaseData() {
+  // Clear all Supabase-related items from localStorage
+  Object.keys(localStorage)
+    .filter(key => key.startsWith('sb-'))
+    .forEach(key => localStorage.removeItem(key));
+}
+
 export async function signInWithEmail(email: string, password: string) {
   try {
     console.log('Starting authentication process...');

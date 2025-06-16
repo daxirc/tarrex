@@ -5,7 +5,7 @@ import AuthLayout from '../layouts/AuthLayout';
 import Button from '../components/ui/Button';
 import FormField from '../components/ui/FormField';
 import { Mail, Lock, AlertCircle, ExternalLink, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
-import { signInWithEmail } from '../lib/auth';
+import { signInWithEmail, clearSupabaseData } from '../lib/auth';
 import { supabase, testSupabaseConnection, validateEnvironmentSetup } from '../lib/supabase';
 
 export default function Login() {
@@ -18,6 +18,12 @@ export default function Login() {
     password: '',
     rememberMe: false
   });
+
+  // Clear any stale tokens on component mount
+  useEffect(() => {
+    // Clear Supabase data to prevent token issues
+    clearSupabaseData();
+  }, []);
 
   // Test connection on component mount
   useEffect(() => {
@@ -84,6 +90,9 @@ export default function Login() {
 
     try {
       console.log('Starting login process...');
+      
+      // Clear any existing tokens before attempting to sign in
+      clearSupabaseData();
       
       // Attempt to sign in
       const { data, error } = await signInWithEmail(formData.email, formData.password);
